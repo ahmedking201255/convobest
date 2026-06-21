@@ -52,18 +52,25 @@ export async function POST(request: Request) {
       ) ENGINE=InnoDB
     `);
 
-    const stateRows = await connection.query<{ lastRunAt: Date }[]>(
-      'SELECT lastRunAt FROM MaintenanceState WHERE maintenanceKey = ? LIMIT 1',
+    const stateRows = await connection.query<{ isDue: number; nextRunAt: string }[]>(
+      `SELECT
+         UTC_TIMESTAMP(3) >= DATE_ADD(lastRunAt, INTERVAL ${RETENTION_DAYS} DAY) AS isDue,
+         DATE_FORMAT(
+           DATE_ADD(lastRunAt, INTERVAL ${RETENTION_DAYS} DAY),
+           '%Y-%m-%dT%H:%i:%s.000Z'
+         ) AS nextRunAt
+       FROM MaintenanceState
+       WHERE maintenanceKey = ?
+       LIMIT 1`,
       [LOCK_NAME],
     );
-    const lastRunAt = stateRows[0]?.lastRunAt;
-    const dueAt = lastRunAt ? lastRunAt.getTime() + RETENTION_DAYS * 24 * 60 * 60 * 1000 : 0;
+    const state = stateRows[0];
 
-    if (Date.now() < dueAt) {
+    if (state && state.isDue !== 1) {
       return NextResponse.json({
         cleaned: false,
         reason: 'not-due',
-        nextRunAt: new Date(dueAt).toISOString(),
+        nextRunAt: state.nextRunAt,
       });
     }
 
