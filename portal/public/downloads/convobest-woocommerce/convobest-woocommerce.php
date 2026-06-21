@@ -2,7 +2,7 @@
 /**
  * Plugin Name: ConvoBest WooCommerce WhatsApp Notifications
  * Description: إرسال إشعارات وتنبيهات تلقائية للعملاء على الواتساب عند تغيير حالة الطلب عبر ConvoBest Portal.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: ConvoBest
  * Text Domain: convobest-woocommerce
  */
@@ -54,6 +54,14 @@ function convobest_get_settings() {
             'id'       => 'convobest_api_key',
             'css'      => 'min-width: 400px;'
         ),
+        'country_code' => array(
+            'name'     => 'Default country code',
+            'type'     => 'text',
+            'desc'     => 'Used when the billing phone starts with a local zero. Example: 20 for Egypt.',
+            'id'       => 'convobest_country_code',
+            'default'  => '20',
+            'css'      => 'width: 120px;'
+        ),
         'section_end' => array(
             'type' => 'sectionend',
             'id' => 'convobest_section_end'
@@ -61,45 +69,126 @@ function convobest_get_settings() {
     );
 }
 
-// 5. Hook WooCommerce Order Status Changes
+// 5. Queue notifications for both initial order creation and later status changes.
+add_action('woocommerce_checkout_order_created', 'convobest_on_order_created', 10, 1);
+function convobest_on_order_created($order) {
+    if ($order instanceof WC_Order) {
+        convobest_queue_order_notification($order->get_id(), $order->get_status());
+    }
+}
+
 add_action('woocommerce_order_status_changed', 'convobest_on_order_status_changed', 10, 4);
 function convobest_on_order_status_changed($order_id, $old_status, $new_status, $order) {
-    $api_url = get_option('convobest_api_url');
-    $api_key = get_option('convobest_api_key');
+    convobest_queue_order_notification($order_id, $new_status);
+}
 
-    if (empty($api_url) || empty($api_key)) {
-        return; // Connection details are missing
+add_action('convobest_dispatch_order_notification', 'convobest_dispatch_order_notification', 10, 3);
+
+function convobest_queue_order_notification($order_id, $status) {
+    $supported_statuses = array('pending', 'processing', 'completed');
+    $status = sanitize_key($status);
+    if (!in_array($status, $supported_statuses, true)) {
+        return;
     }
 
-    $billing_phone = $order->get_billing_phone();
-    if (empty($billing_phone)) {
-        return; // Customer has no phone number
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        return;
     }
 
-    $first_name = $order->get_billing_first_name();
-    $last_name = $order->get_billing_last_name();
-    $customer_name = trim($first_name . ' ' . $last_name);
-    if (empty($customer_name)) {
+    $notified = (array) $order->get_meta('_convobest_notified_statuses', true);
+    $queued = (array) $order->get_meta('_convobest_queued_statuses', true);
+    if (in_array($status, $notified, true) || in_array($status, $queued, true)) {
+        return;
+    }
+
+    $queued[] = $status;
+    $order->update_meta_data('_convobest_queued_statuses', array_values(array_unique($queued)));
+    $order->save_meta_data();
+
+    if (function_exists('as_enqueue_async_action')) {
+        as_enqueue_async_action(
+            'convobest_dispatch_order_notification',
+            array($order_id, $status, 0),
+            'convobest'
+        );
+        return;
+    }
+
+    convobest_dispatch_order_notification($order_id, $status, 0);
+}
+
+function convobest_normalize_phone($phone) {
+    $phone = preg_replace('/\D+/', '', (string) $phone);
+    if (strpos($phone, '00') === 0) {
+        return substr($phone, 2);
+    }
+    if (strpos($phone, '0') === 0) {
+        $country_code = preg_replace('/\D+/', '', (string) get_option('convobest_country_code', '20'));
+        return $country_code . ltrim($phone, '0');
+    }
+    return $phone;
+}
+
+function convobest_dispatch_order_notification($order_id, $status, $attempt = 0) {
+    $order = wc_get_order($order_id);
+    $api_url = (string) get_option('convobest_api_url');
+    $api_key = (string) get_option('convobest_api_key');
+    $logger = wc_get_logger();
+    $context = array('source' => 'convobest-woocommerce');
+
+    if (!$order || $api_url === '' || $api_key === '') {
+        $logger->error('Order or ConvoBest connection settings are missing.', $context);
+        return;
+    }
+
+    $phone = convobest_normalize_phone($order->get_billing_phone());
+    if ($phone === '') {
+        $logger->error('Order #' . $order_id . ' has no valid billing phone.', $context);
+        return;
+    }
+
+    $customer_name = trim($order->get_billing_first_name() . ' ' . $order->get_billing_last_name());
+    if ($customer_name === '') {
         $customer_name = 'عميلنا العزيز';
     }
 
-    // Build the payload
-    $payload = array(
-        'apiKey'        => $api_key,
-        'orderId'       => (string)$order_id,
-        'status'        => $new_status,
-        'customerName'  => $customer_name,
-        'customerPhone' => $billing_phone,
-        'total'         => (string)$order->get_total(),
-        'currency'      => $order->get_currency()
-    );
-
-    // Dispatch POST request to the ConvoBest portal
-    wp_remote_post($api_url, array(
-        'method'    => 'POST',
-        'headers'   => array('Content-Type' => 'application/json; charset=utf-8'),
-        'body'      => json_encode($payload),
-        'timeout'   => 10,
-        'blocking'  => false // Do not delay checkout page reload for the user
+    $response = wp_remote_post($api_url, array(
+        'headers' => array('Content-Type' => 'application/json; charset=utf-8'),
+        'body' => wp_json_encode(array(
+            'apiKey' => $api_key,
+            'orderId' => (string) $order_id,
+            'status' => $status,
+            'customerName' => $customer_name,
+            'customerPhone' => $phone,
+            'total' => (string) $order->get_total(),
+            'currency' => $order->get_currency(),
+        )),
+        'timeout' => 20,
+        'blocking' => true,
     ));
+
+    $response_code = is_wp_error($response) ? 0 : (int) wp_remote_retrieve_response_code($response);
+    if (!is_wp_error($response) && $response_code >= 200 && $response_code < 300) {
+        $notified = (array) $order->get_meta('_convobest_notified_statuses', true);
+        $notified[] = $status;
+        $order->update_meta_data('_convobest_notified_statuses', array_values(array_unique($notified)));
+        $order->save_meta_data();
+        $logger->info('Notification sent for order #' . $order_id . ' with status ' . $status . '.', $context);
+        return;
+    }
+
+    $error = is_wp_error($response)
+        ? $response->get_error_message()
+        : 'HTTP ' . $response_code . ': ' . wp_remote_retrieve_body($response);
+    $logger->error('Notification failed for order #' . $order_id . ': ' . $error, $context);
+
+    if ((int) $attempt < 2 && function_exists('as_schedule_single_action')) {
+        as_schedule_single_action(
+            time() + 300,
+            'convobest_dispatch_order_notification',
+            array($order_id, $status, (int) $attempt + 1),
+            'convobest'
+        );
+    }
 }
