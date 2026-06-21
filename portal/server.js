@@ -1,3 +1,5 @@
+require('dotenv/config');
+
 process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || '2';
 process.env.NEXT_PRIVATE_WORKER_COUNT = process.env.NEXT_PRIVATE_WORKER_COUNT || '1';
 
