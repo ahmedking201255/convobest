@@ -24,9 +24,9 @@ export function mysqlPoolConfigFromUrl(databaseUrl: string | undefined) {
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
     database: decodeURIComponent(database),
-    connectionLimit: readPositiveInt(url.searchParams.get('connection_limit') || url.searchParams.get('connectionLimit'), 10),
-    acquireTimeout: readPositiveInt(url.searchParams.get('pool_timeout') || url.searchParams.get('acquireTimeout'), 10000),
-    connectTimeout: readPositiveInt(url.searchParams.get('connect_timeout') || url.searchParams.get('connectTimeout'), 5000),
+    connectionLimit: readPositiveInt(url.searchParams.get('connection_limit') || url.searchParams.get('connectionLimit'), 3),
+    acquireTimeout: readPositiveInt(url.searchParams.get('pool_timeout') || url.searchParams.get('acquireTimeout'), 3000),
+    connectTimeout: readPositiveInt(url.searchParams.get('connect_timeout') || url.searchParams.get('connectTimeout'), 3000),
     idleTimeout: readPositiveInt(url.searchParams.get('idle_timeout') || url.searchParams.get('idleTimeout'), 30),
   };
 }

@@ -50,7 +50,6 @@ export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [faqOpen, setFaqOpen] = useState<number | null>(null);
   const [currentUser, setCurrentUser] = useState<LandingUser | null>(null);
-  const [sessionLoading, setSessionLoading] = useState(true);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [instances, setInstances] = useState<any[]>([]);
   const [recipientPhone, setRecipientPhone] = useState('');
@@ -60,10 +59,15 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 2500);
 
     async function loadSession() {
       try {
-        const response = await fetch('/api/auth/session', { cache: 'no-store' });
+        const response = await fetch('/api/auth/session', {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         const data = await response.json();
 
         if (active && response.ok && data.authenticated) {
@@ -90,14 +94,14 @@ export default function Home() {
         }
       } catch (error) {
         console.error('Failed to load landing page session:', error);
-      } finally {
-        if (active) setSessionLoading(false);
       }
     }
 
     loadSession();
     return () => {
       active = false;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
   }, []);
 
@@ -309,12 +313,7 @@ print(response.json())`
           </nav>
 
           <div className="hidden md:flex items-center gap-3 min-h-12">
-            {sessionLoading ? (
-              <div className="flex items-center gap-3" aria-label="جاري تحميل بيانات الحساب">
-                <div className="h-10 w-32 rounded-lg bg-white/[0.04] animate-pulse" />
-                <div className="h-10 w-10 rounded-lg bg-white/[0.04] animate-pulse" />
-              </div>
-            ) : currentUser ? (
+            {currentUser ? (
               <div className="relative">
                 <button
                   type="button"
@@ -437,9 +436,7 @@ print(response.json())`
             <a href="#pricing" className="text-lg font-medium" onClick={() => setMobileMenuOpen(false)}>الأسعار</a>
             <a href="#faq" className="text-lg font-medium" onClick={() => setMobileMenuOpen(false)}>الأسئلة الشائعة</a>
             <hr className="border-[rgba(255,255,255,0.06)]" />
-            {sessionLoading ? (
-              <div className="h-20 rounded-lg bg-white/[0.04] animate-pulse" />
-            ) : currentUser ? (
+            {currentUser ? (
               <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-3 rounded-lg border border-white/[0.08] bg-white/[0.025] p-3">
                   <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-[#00ffa7]/12 text-base font-black text-[#00ffa7] ring-1 ring-[#00ffa7]/25">

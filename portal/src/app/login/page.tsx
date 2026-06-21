@@ -38,10 +38,9 @@ export default function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
-
   useEffect(() => {
     const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 2500);
 
     async function checkSession() {
       try {
@@ -61,11 +60,13 @@ export default function Login() {
         console.error('Session check failed:', sessionError);
       }
 
-      setCheckingSession(false);
     }
 
     checkSession();
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,21 +106,6 @@ export default function Login() {
       setLoading(false);
     }
   };
-
-  if (checkingSession) {
-    return (
-      <div className="relative min-h-screen flex items-center justify-center p-6">
-        <div className="bg-grid"></div>
-        <div key="checking-session-loader" className="relative z-10 flex flex-col items-center gap-4" role="status" aria-label="جاري التحقق من جلسة الحساب">
-          <img src="/logo.png" alt="ConvoBest" className="w-14 h-14 rounded-xl shadow-lg shadow-[#00ffa7]/15" />
-          <div className="h-1 w-28 overflow-hidden rounded-full bg-white/[0.06]">
-            <div className="h-full w-1/2 animate-pulse rounded-full bg-[#00ffa7]" />
-          </div>
-          <span className="text-xs font-semibold text-[#90a4ae]">جاري التحقق من جلسة الحساب...</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-6">

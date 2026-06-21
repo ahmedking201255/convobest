@@ -14,7 +14,7 @@ const adapter =
     database: mysqlConfig.database,
   });
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.adapter = adapter;
+globalForPrisma.adapter = adapter;
 
 export const prisma =
   globalForPrisma.prisma ??
@@ -23,4 +23,4 @@ export const prisma =
     log: ['error'],
   });
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
+globalForPrisma.prisma = prisma;
