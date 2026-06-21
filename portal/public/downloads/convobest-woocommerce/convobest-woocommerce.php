@@ -87,6 +87,9 @@ add_action('convobest_dispatch_order_notification', 'convobest_dispatch_order_no
 function convobest_queue_order_notification($order_id, $status) {
     $supported_statuses = array('pending', 'processing', 'completed');
     $status = sanitize_key($status);
+    if ($status === 'on-hold') {
+        $status = 'pending';
+    }
     if (!in_array($status, $supported_statuses, true)) {
         return;
     }
