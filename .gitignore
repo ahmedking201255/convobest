@@ -47,6 +47,7 @@ portal/scratch_check_logs.js
 
 # Local deploy artifacts
 .deploy-package/
+hostinger-upload/
 *.tgz
 *.tar
 *.tar.gz
