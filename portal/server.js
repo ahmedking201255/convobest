@@ -11,6 +11,7 @@ const port = parseInt(process.env.PORT || '3000', 10);
 const hostname = process.env.HOST || '0.0.0.0';
 const engineHealthUrl = process.env.WHATSAPP_ENGINE_HEALTH_URL || 'http://127.0.0.1:8080/server/ok';
 const engineEnsureScript = process.env.WHATSAPP_ENGINE_ENSURE_SCRIPT || '/home/u206521676/convobest-go/ensure-engine.sh';
+const messageCleanupSecret = process.env.MESSAGE_CLEANUP_SECRET || process.env.JWT_SECRET;
 const app = next({ dev: false, hostname, port });
 const handle = app.getRequestHandler();
 
@@ -38,6 +39,27 @@ async function monitorWhatsAppEngine() {
   ensureWhatsAppEngine();
 }
 
+async function runMessageCleanup() {
+  if (!messageCleanupSecret) {
+    console.error('[Message Cleanup] MESSAGE_CLEANUP_SECRET or JWT_SECRET is required.');
+    return;
+  }
+
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/internal/message-cleanup`, {
+      method: 'POST',
+      headers: { 'x-cleanup-secret': messageCleanupSecret },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      console.error(`[Message Cleanup] Request failed with status ${response.status}.`);
+    }
+  } catch (error) {
+    console.error('[Message Cleanup] Request failed:', error.message);
+  }
+}
+
 app.prepare().then(() => {
   createServer((req, res) => {
     handle(req, res);
@@ -46,5 +68,10 @@ app.prepare().then(() => {
     monitorWhatsAppEngine();
     const engineMonitor = setInterval(monitorWhatsAppEngine, 30000);
     engineMonitor.unref();
+
+    const cleanupStart = setTimeout(runMessageCleanup, 10000);
+    cleanupStart.unref();
+    const cleanupMonitor = setInterval(runMessageCleanup, 60 * 60 * 1000);
+    cleanupMonitor.unref();
   });
 });
